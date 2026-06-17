@@ -72,7 +72,7 @@ class BreakoutConstants(struct.PyTreeNode):
 class BreakoutObservation:
     player: ObjectObservation
     ball: ObjectObservation
-    blocks: jnp.ndarray
+    blocks: ObjectObservation
     lives: jnp.ndarray
     score: jnp.ndarray
 
@@ -735,8 +735,27 @@ class JaxBreakout(JaxEnvironment[BreakoutState, BreakoutObservation, BreakoutInf
         )
         
         # --- Blocks ---
-        # Pass the grid directly as a dense array
-        blocks = state.blocks.astype(jnp.int32)
+        # Pass the grid as an array
+        num_blocks = self.consts.NUM_ROWS * self.consts.BLOCKS_PER_ROW
+        blocks_array = jnp.arange(num_blocks, dtype=jnp.int32) # flat array for blocks
+
+        blocks_xs = self.consts.BLOCK_START_X + (blocks_array % self.consts.BLOCKS_PER_ROW) * self.consts.BLOCK_SIZE[0]
+        blocks_ys = self.consts.BLOCK_START_Y + (blocks_array // self.consts.BLOCKS_PER_ROW) * self.consts.BLOCK_SIZE[1]
+
+        blocks_widths = jnp.full((num_blocks,), self.consts.BLOCK_SIZE[0], dtype=jnp.int32)
+        blocks_heights = jnp.full((num_blocks,), self.consts.BLOCK_SIZE[1], dtype=jnp.int32)
+
+        # Use the state.blocks array as the active flag (1 if existing, 0 if destroyed)
+        blocks_active = state.blocks.ravel().astype(jnp.int32)
+
+        # Build the structured ObjectObservation object
+        blocks = ObjectObservation.create(
+            x=blocks_xs,
+            y=blocks_ys,
+            width=blocks_widths,
+            height=blocks_heights,
+            active=blocks_active
+        )
 
         return BreakoutObservation(
             player=player,
@@ -784,7 +803,7 @@ class JaxBreakout(JaxEnvironment[BreakoutState, BreakoutObservation, BreakoutInf
         return spaces.Dict({
             "player": spaces.get_object_space(n=None, screen_size=(self.consts.WINDOW_HEIGHT, self.consts.WINDOW_WIDTH)),
             "ball": spaces.get_object_space(n=None, screen_size=(self.consts.WINDOW_HEIGHT, self.consts.WINDOW_WIDTH)),
-            "blocks": spaces.Box(low=0, high=1, shape=(self.consts.NUM_ROWS, self.consts.BLOCKS_PER_ROW), dtype=jnp.int32),
+            "blocks": spaces.get_object_space(n=(self.consts.NUM_ROWS * self.consts.BLOCKS_PER_ROW), screen_size=(self.consts.WINDOW_HEIGHT, self.consts.WINDOW_WIDTH)),
             "lives": spaces.Box(low=0, high=self.consts.NUM_LIVES, shape=(), dtype=jnp.int32),
             "score": spaces.Box(low=0, high=jnp.iinfo(jnp.int32).max, shape=(), dtype=jnp.int32),
         })
