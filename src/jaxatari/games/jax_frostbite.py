@@ -437,7 +437,7 @@ class FrostbiteObservation:
     bailey: ObjectObservation
     obstacles: ObjectObservation
     bear: ObjectObservation
-    ice_grid: jnp.ndarray
+    ice_grid: ObjectObservation
     igloo_progress: jnp.ndarray
     temperature: jnp.ndarray
     score: jnp.ndarray
@@ -897,6 +897,8 @@ class JaxFrostbite(JaxEnvironment[FrostbiteState, FrostbiteObservation, Frostbit
         # --- Ice Grid (Procedural Generation) ---
         # Generate a grid representation of where valid ice exists
         # We sample the "active block" logic at regular intervals
+        
+        '''
         grid_width = 16 # Discretize screen width into 16 chunks
         sample_xs = jnp.linspace(self.consts.PLAYFIELD_LEFT, self.consts.PLAYFIELD_RIGHT, grid_width).astype(jnp.int32)
         
@@ -911,6 +913,26 @@ class JaxFrostbite(JaxEnvironment[FrostbiteState, FrostbiteObservation, Frostbit
         
         hits = active & (px >= seg_x) & (px < seg_x + seg_w) # Shape: (4, 6, 16)
         ice_grid = jnp.any(hits, axis=1).astype(jnp.int32) # Shape: (4, 16)
+        '''
+        ice_x = state.ice_segments_x.flatten()
+        ice_w = state.ice_segments_w.flatten()
+        ice_active = (ice_w > 0).astype(jnp.int32)
+
+        row_ys = jnp.array(self.consts.ICE_ROW_Y, dtype=jnp.int32)[:, None]
+        ice_y = jnp.broadcast_to(row_ys, (4, 6)).flatten()
+        
+        row_dirs = state.ice_directions[:, None]
+        ice_dir = jnp.broadcast_to(row_dirs, (4, 6)).flatten()
+        ice_ori = jnp.where(ice_dir == 0, 90.0, 270.0)
+
+        ice_grid = ObjectObservation.create(
+            x=jnp.clip(ice_x, 0, self.const.SCREEN_WIDTH),
+            y=jnp.clip(ice_y, 0, self.consts.SCREEN_HEIGHT),
+            width=ice_w,
+            height=jnp.full((24,), 8, dtype=jnp.int32),
+            orientation=ice_ori.astype(jnp.float32),
+            active=ice_active
+        )
 
         score_val = self._bcd_to_decimal(state.score)
         temp_val = self._bcd_to_decimal(jnp.array([0, 0, state.temperature], dtype=jnp.int32))
