@@ -19,3 +19,4 @@ data/oc_parity_corpus/final_report/
 /.claude
 CLAUDE.md
 .gitattributes
+uv.lock
