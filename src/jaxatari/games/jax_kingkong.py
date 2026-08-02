@@ -2166,7 +2166,7 @@ class JaxKingKong(JaxEnvironment[KingKongState, KingKongObservation, KingKongInf
 		)
 
 
-        platforms = ObjectObservation.create(
+		platforms = ObjectObservation.create(
             # see FLOOR_BOUNDS
             # see HOLE_LOCATIONS
             # what to do about static parts??
