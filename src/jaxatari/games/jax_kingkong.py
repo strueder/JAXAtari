@@ -148,8 +148,39 @@ class KingKongConstants(AutoDerivedConstants):
 		[16, 150], # Sixth floor
 		[20, 142], # Seventh floor 
 		[12, 150], # Princess floor - no bounds required bc goal reached 
-	])) # floor bounds by floor (min_x, min_y) - y is always the same (see FLOOR_LOCATIONS)
+	])) # floor bounds by floor (min_x, max_x) - the y of each floor is in FLOOR_LOCATIONS
 	FLOOR_LOCATIONS: chex.Array = struct.field(pytree_node=False, default_factory=lambda: jnp.array([228, 204, 180, 156, 132, 108, 84, 60, 40, 0])) # y corrdinate, 0 for topmost floor calculation reuqired
+	PLATFORM_SEGMENTS: chex.Array = struct.field(pytree_node=False, default_factory=lambda: jnp.array([
+		[  8, 227, 144,   2],
+		[  8, 203, 144,   2],
+		[  8, 179,  48,   2],
+		[ 60, 179,  40,   2],
+		[104, 179,  48,   2],
+		[  8, 155, 144,   2],
+		[  8, 131,  32,   2],
+		[ 44, 131,  72,   2],
+		[120, 131,  32,   2],
+		[  8, 107, 144,   2],
+		[  8,  83,  44,   2],
+		[ 56,  83,  48,   2],
+		[108,  83,  44,   2],
+		[ 12,  59, 136,   2],
+		[ 24,  39, 112,   2],
+		[ 24,  41,   4,   4],
+		[132,  41,   4,   4],
+		[ 20,  45,   8,   2],
+		[132,  45,   8,   2],
+		[ 20,  47,   4,   2],
+		[136,  47,   4,   2],
+		[ 16,  49,   8,   2],
+		[136,  49,   8,   2],
+		[ 16,  51,   4,   8],
+		[140,  51,   4,   8],
+		[ 12,  61,   4,  22],
+		[144,  61,   4,  22],
+		[  8,  85,   4, 142],
+		[148,  85,   4, 142],
+	]))
 
 	PRINCESS_MOVEMENT_BOUNDS: chex.Array = struct.field(pytree_node=False, default_factory=lambda: jnp.array([77, 113]))
 
@@ -463,6 +494,8 @@ class KingKongObservation(struct.PyTreeNode):
     kong: ObjectObservation
     princess: ObjectObservation
     bombs: ObjectObservation
+    ladders: ObjectObservation
+    platforms: ObjectObservation
     score: jnp.ndarray
     lives: jnp.ndarray
     level: jnp.ndarray
@@ -499,7 +532,13 @@ class JaxKingKong(JaxEnvironment[KingKongState, KingKongObservation, KingKongInf
 		consts = consts or KingKongConstants()
 		super().__init__(consts)
 		self.renderer = KingKongRenderer(self.consts)
-		self.obs_size = 5 + 5 + 5 + (6 * self.consts.MAX_BOMBS) + 6  # player + kong + princess + bombs + game_info
+		_lad = np.asarray(self.consts.LADDER_LOCATIONS)
+		_floors = np.asarray(self.consts.FLOOR_LOCATIONS)
+		_y2 = np.array([_floors[_floors <= y2].max() for y2 in _lad[:, 3]])
+		self.LADDER_BOXES = jnp.array(
+			np.stack([_lad[:, 0], _lad[:, 1], _lad[:, 2] - _lad[:, 0], _y2 - _lad[:, 1]], axis=1),
+			dtype=jnp.int32,
+		)
 
 	def reset(self, key=None) -> Tuple[KingKongObservation, KingKongState]:
 		if key is None:
@@ -2230,11 +2269,29 @@ class JaxKingKong(JaxEnvironment[KingKongState, KingKongObservation, KingKongInf
 			active=((state.bomb_active > 0) & b_visible).astype(jnp.int32)
 		)
 
+		ladders = ObjectObservation.create(
+			x=self.LADDER_BOXES[:, 0],
+			y=self.LADDER_BOXES[:, 1],
+			width=self.LADDER_BOXES[:, 2],
+			height=self.LADDER_BOXES[:, 3],
+			active=jnp.ones((self.LADDER_BOXES.shape[0],), dtype=jnp.int32),
+		)
+
+		platforms = ObjectObservation.create(
+			x=self.consts.PLATFORM_SEGMENTS[:, 0],
+			y=self.consts.PLATFORM_SEGMENTS[:, 1],
+			width=self.consts.PLATFORM_SEGMENTS[:, 2],
+			height=self.consts.PLATFORM_SEGMENTS[:, 3],
+			active=jnp.ones((self.consts.PLATFORM_SEGMENTS.shape[0],), dtype=jnp.int32),
+		)
+
 		return KingKongObservation(
 			player=player,
 			kong=kong,
 			princess=princess,
 			bombs=bombs,
+			ladders=ladders,
+			platforms=platforms,
 			score=state.score,
 			lives=state.lives,
 			level=state.level
@@ -2249,6 +2306,8 @@ class JaxKingKong(JaxEnvironment[KingKongState, KingKongObservation, KingKongInf
 			"kong": spaces.get_object_space(n=None, screen_size=(self.consts.HEIGHT, self.consts.WIDTH)),
 			"princess": spaces.get_object_space(n=None, screen_size=(self.consts.HEIGHT, self.consts.WIDTH)),
 			"bombs": spaces.get_object_space(n=self.consts.MAX_BOMBS, screen_size=(self.consts.HEIGHT, self.consts.WIDTH)),
+			"ladders": spaces.get_object_space(n=self.consts.LADDER_LOCATIONS.shape[0], screen_size=(self.consts.HEIGHT, self.consts.WIDTH)),
+			"platforms": spaces.get_object_space(n=self.consts.PLATFORM_SEGMENTS.shape[0], screen_size=(self.consts.HEIGHT, self.consts.WIDTH)),
 			"score": spaces.Box(low=0, high=self.consts.MAX_SCORE, shape=(), dtype=jnp.int32),
 			"lives": spaces.Box(low=0, high=self.consts.MAX_LIVES, shape=(), dtype=jnp.int32),
 			"level": spaces.Box(low=1, high=100, shape=(), dtype=jnp.int32),
