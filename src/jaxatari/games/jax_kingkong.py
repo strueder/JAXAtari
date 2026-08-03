@@ -2160,7 +2160,7 @@ class JaxKingKong(JaxEnvironment[KingKongState, KingKongObservation, KingKongInf
 			orientation=p_ori.astype(jnp.float32),
 			# We pass the player_state enum as 'state' so the agent knows if it's climbing/jumping
 			state=state.player_state.astype(jnp.int32),
-			active=p_active.astype(jnp.int32)
+			active=(p_active & p_visible).astype(jnp.int32)
 		)
 
 		# --- Kong ---
@@ -2177,7 +2177,7 @@ class JaxKingKong(JaxEnvironment[KingKongState, KingKongObservation, KingKongInf
 			width=k_w.astype(jnp.int32),
 			height=k_h.astype(jnp.int32),
 			orientation=jnp.array(0.0, dtype=jnp.float32),
-			active=state.kong_visible.astype(jnp.int32)
+			active=((state.kong_visible != 0) & k_visible).astype(jnp.int32)
 		)
 
 		# --- Princess ---
@@ -2197,7 +2197,7 @@ class JaxKingKong(JaxEnvironment[KingKongState, KingKongObservation, KingKongInf
 			height=pr_h.astype(jnp.int32),
 			orientation=jnp.array(0.0, dtype=jnp.float32),
 			state=state.princess_waving.astype(jnp.int32), # 0=Standing, 1=Waving
-			active=state.princess_visible.astype(jnp.int32)
+			active=((state.princess_visible != 0) & pr_visible).astype(jnp.int32)
 		)
 
 		# --- Bombs ---
@@ -2227,7 +2227,7 @@ class JaxKingKong(JaxEnvironment[KingKongState, KingKongObservation, KingKongInf
 			height=b_h.astype(jnp.int32),
 			orientation=b_ori.astype(jnp.float32),
 			visual_id=state.bomb_is_magic.astype(jnp.int32), # 0=Normal, 1=Magic
-			active=state.bomb_active.astype(jnp.int32)
+			active=((state.bomb_active > 0) & b_visible).astype(jnp.int32)
 		)
 
 		return KingKongObservation(
