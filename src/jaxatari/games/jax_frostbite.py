@@ -898,22 +898,6 @@ class JaxFrostbite(JaxEnvironment[FrostbiteState, FrostbiteObservation, Frostbit
         # Generate a grid representation of where valid ice exists
         # We sample the "active block" logic at regular intervals
         
-        '''
-        grid_width = 16 # Discretize screen width into 16 chunks
-        sample_xs = jnp.linspace(self.consts.PLAYFIELD_LEFT, self.consts.PLAYFIELD_RIGHT, grid_width).astype(jnp.int32)
-        
-        pos = state.ice_segments_x # (4, 6)
-        widths = state.ice_segments_w # (4, 6)
-        mask = widths > 0 # (4, 6)
-        
-        px = sample_xs.reshape(1, 1, 16)
-        seg_x = pos.reshape(4, 6, 1)
-        seg_w = widths.reshape(4, 6, 1)
-        active = mask.reshape(4, 6, 1)
-        
-        hits = active & (px >= seg_x) & (px < seg_x + seg_w) # Shape: (4, 6, 16)
-        ice_grid = jnp.any(hits, axis=1).astype(jnp.int32) # Shape: (4, 16)
-        '''
         ice_x = state.ice_segments_x.flatten()
         ice_w = state.ice_segments_w.flatten()
         ice_active = (ice_w > 0).astype(jnp.int32)
@@ -926,7 +910,7 @@ class JaxFrostbite(JaxEnvironment[FrostbiteState, FrostbiteObservation, Frostbit
         ice_ori = jnp.where(ice_dir == 0, 90.0, 270.0)
 
         ice_grid = ObjectObservation.create(
-            x=jnp.clip(ice_x, 0, self.const.SCREEN_WIDTH),
+            x=jnp.clip(ice_x, 0, self.consts.SCREEN_WIDTH),
             y=jnp.clip(ice_y, 0, self.consts.SCREEN_HEIGHT),
             width=ice_w,
             height=jnp.full((24,), 8, dtype=jnp.int32),
