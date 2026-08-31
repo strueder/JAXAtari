@@ -766,7 +766,7 @@ class JaxBreakout(JaxEnvironment[BreakoutState, BreakoutObservation, BreakoutInf
             tier_heights = jnp.full((num_tier_blocks,), self.consts.BLOCK_SIZE[1], dtype=jnp.int32)
 
             #state blocks as active flag
-            tier_active = jax.lax.dynamic_index_in_dim(
+            tier_active = jax.lax.dynamic_slice_in_dim(
                 state.blocks, row_start, rows_per_tier, axis=0
             ).ravel().astype(jnp.int32)
 
