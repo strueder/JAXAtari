@@ -72,7 +72,9 @@ class BreakoutConstants(struct.PyTreeNode):
 class BreakoutObservation:
     player: ObjectObservation
     ball: ObjectObservation
-    blocks: ObjectObservation
+    blocks_bot: ObjectObservation
+    blocks_mid: ObjectObservation
+    blocks_top: ObjectObservation
     lives: jnp.ndarray
     score: jnp.ndarray
 
