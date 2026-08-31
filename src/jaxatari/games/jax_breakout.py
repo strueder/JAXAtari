@@ -738,22 +738,6 @@ class JaxBreakout(JaxEnvironment[BreakoutState, BreakoutObservation, BreakoutInf
         
         # --- Blocks ---
         # Pass the grid as an array, but separate it into 3 parts of 2 rows each
-        '''
-        num_blocks = self.consts.NUM_ROWS * self.consts.BLOCKS_PER_ROW
-                blocks_array = jnp.arange(num_blocks, dtype=jnp.int32) # flat array for blocks
-        
-                blocks_xs = self.consts.BLOCK_START_X + (blocks_array % self.consts.BLOCKS_PER_ROW) * self.consts.BLOCK_SIZE[0]
-                blocks_ys = self.consts.BLOCK_START_Y + (blocks_array // self.consts.BLOCKS_PER_ROW) * self.consts.BLOCK_SIZE[1]
-        
-                blocks_widths = jnp.full((num_blocks,), self.consts.BLOCK_SIZE[0], dtype=jnp.int32)
-                blocks_heights = jnp.full((num_blocks,), self.consts.BLOCK_SIZE[1], dtype=jnp.int32)
-        
-                # Use the state.blocks array as the active flag (1 if existing, 0 if destroyed)
-                blocks_active = state.blocks.ravel().astype(jnp.int32)
-        
-                # Build the structured ObjectObservation object
-        '''
-
         rows_per_tier = self.consts.NUM_ROWS // 3
 
         def _create_block_tier(row_start: int) -> ObjectObservation:
@@ -761,7 +745,7 @@ class JaxBreakout(JaxEnvironment[BreakoutState, BreakoutObservation, BreakoutInf
             tier_idx = row_start * self.consts.BLOCKS_PER_ROW + jnp.arange(num_tier_blocks, dtype=jnp.int32)
 
             col = tier_idx % self.consts.BLOCKS_PER_ROW
-            row = row_start + (tier_idx // self.consts.BLOCKS_PER_ROW)
+            row = tier_idx // self.consts.BLOCKS_PER_ROW
             tier_xs = self.consts.BLOCK_START_X + col * self.consts.BLOCK_SIZE[0]
             tier_ys = self.consts.BLOCK_START_Y + row * self.consts.BLOCK_SIZE[1]
             tier_widths = jnp.full((num_tier_blocks,), self.consts.BLOCK_SIZE[0], dtype=jnp.int32)
@@ -777,16 +761,6 @@ class JaxBreakout(JaxEnvironment[BreakoutState, BreakoutObservation, BreakoutInf
                 height=tier_heights,
                 active=tier_active
             )
-        
-        '''
-        blocks = ObjectObservation.create(
-                    x=blocks_xs,
-                    y=blocks_ys,
-                    width=blocks_widths,
-                    height=blocks_heights,
-                    active=blocks_active
-                )
-        '''
         
         blocks_top = _create_block_tier(row_start=0)
         blocks_mid = _create_block_tier(row_start=rows_per_tier)
@@ -841,7 +815,6 @@ class JaxBreakout(JaxEnvironment[BreakoutState, BreakoutObservation, BreakoutInf
         return spaces.Dict({
             "player": spaces.get_object_space(n=None, screen_size=(self.consts.WINDOW_HEIGHT, self.consts.WINDOW_WIDTH)),
             "ball": spaces.get_object_space(n=None, screen_size=(self.consts.WINDOW_HEIGHT, self.consts.WINDOW_WIDTH)),
-            # "blocks": spaces.get_object_space(n=(self.consts.NUM_ROWS * self.consts.BLOCKS_PER_ROW), screen_size=(self.consts.WINDOW_HEIGHT, self.consts.WINDOW_WIDTH)),
             "blocks_bot": spaces.get_object_space(n=blocks_per_tier, screen_size=(self.consts.WINDOW_HEIGHT, self.consts.WINDOW_WIDTH)),
             "blocks_mid": spaces.get_object_space(n=blocks_per_tier, screen_size=(self.consts.WINDOW_HEIGHT, self.consts.WINDOW_WIDTH)),
             "blocks_top": spaces.get_object_space(n=blocks_per_tier, screen_size=(self.consts.WINDOW_HEIGHT, self.consts.WINDOW_WIDTH)),
