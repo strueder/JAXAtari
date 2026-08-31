@@ -758,7 +758,7 @@ class JaxBreakout(JaxEnvironment[BreakoutState, BreakoutObservation, BreakoutInf
 
         def _create_block_tier(row_start: int) -> ObjectObservation:
             num_tier_blocks = rows_per_tier * self.consts.BLOCKS_PER_ROW
-            tier_idx = jnp.arange(num_tier_blocks * self.consts.BLOCKS_PER_ROW)
+            tier_idx = row_start * self.consts.BLOCKS_PER_ROW + jnp.arange(num_tier_blocks * self.consts.BLOCKS_PER_ROW)
 
             col = tier_idx % self.consts.BLOCKS_PER_ROW
             row = row_start + (tier_idx // self.consts.BLOCKS_PER_ROW)
