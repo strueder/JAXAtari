@@ -380,7 +380,6 @@ class JaxTetris(JaxEnvironment[TetrisState, TetrisObservation, TetrisInfo, Tetri
             "active_piece": spaces.get_object_space(n=16, screen_size=(210, 160)),
             "next_piece": single_obj, # Represents type via visual_id
             "blocks": spaces.get_object_space(n=h * w, screen_size=(210, 160)),
-            "frame": single_obj,
             "score": spaces.Box(low=0, high=999999, shape=(), dtype=jnp.int32),
             "game_over": spaces.Box(low=0, high=1, shape=(), dtype=jnp.int32),
         })
@@ -584,30 +583,25 @@ class JaxTetris(JaxEnvironment[TetrisState, TetrisObservation, TetrisInfo, Tetri
         # Rotation 0..3 -> 0, 90, 180, 270
         rot_deg = (state.rot * 90.0).astype(jnp.float32)
         
-        # Tight bounding box of the occupied cells inside the 4x4 tetromino matrix.
-        # The raw 4x4 extent is not the object: an I piece is 4x1 cells, an O piece 2x2.
+        # One box per cell of the 4x4 tetromino matrix, active where occupied.
+        # A single bounding box cannot tell an S piece from a Z or an L: their
+        # bounding boxes are identical, only the silhouette differs.
         grid4 = self.piece_grid(state.piece_type, state.rot)
-        rows_occ = jnp.any(grid4 == 1, axis=1)
-        cols_occ = jnp.any(grid4 == 1, axis=0)
-        row_lo = jnp.argmax(rows_occ)
-        row_hi = 3 - jnp.argmax(rows_occ[::-1])
-        col_lo = jnp.argmax(cols_occ)
-        col_hi = 3 - jnp.argmax(cols_occ[::-1])
+        cell_rows, cell_cols = jnp.meshgrid(jnp.arange(4), jnp.arange(4), indexing="ij")
+        # Empty matrix rows/columns may legally stick out of the board (state.pos[1]
+        # reaches -1); occupied cells never do, so the clamp is a no-op where it counts.
+        piece_rows = jnp.clip(state.pos[0] + cell_rows.ravel(), 0, int(c.BOARD_HEIGHT) - 1)
+        piece_cols = jnp.clip(state.pos[1] + cell_cols.ravel(), 0, int(c.BOARD_WIDTH) - 1)
 
         # Grid cell -> screen pixel, the same mapping render_grid_inverse uses.
-        # No clipping: the tight box is always inside the board, while state.pos itself
-        # may legally sit at -1 because empty matrix columns are allowed to stick out.
-        row0 = state.pos[0] + row_lo
-        col0 = state.pos[1] + col_lo
-
         active_piece = ObjectObservation.create(
-            x=(c.BOARD_X + c.BOARD_PADDING + col0 * (cw + pad)).astype(jnp.int32),
-            y=(c.BOARD_Y + row0 * (ch + pad)).astype(jnp.int32),
-            width=((col_hi - col_lo) * (cw + pad) + cw).astype(jnp.int32),
-            height=((row_hi - row_lo) * (ch + pad) + ch).astype(jnp.int32),
-            active=jnp.array(1, dtype=jnp.int32),
-            visual_id=state.piece_type, # Type determines color/shape
-            orientation=jnp.array(rot_deg, dtype=jnp.float32)
+            x=(c.BOARD_X + c.BOARD_PADDING + piece_cols * (cw + pad)).astype(jnp.int32),
+            y=(c.BOARD_Y + piece_rows * (ch + pad)).astype(jnp.int32),
+            width=jnp.full((16,), cw, dtype=jnp.int32),
+            height=jnp.full((16,), ch, dtype=jnp.int32),
+            active=grid4.ravel().astype(jnp.int32),
+            visual_id=jnp.broadcast_to(state.piece_type, (16,)).astype(jnp.int32),
+            orientation=jnp.broadcast_to(rot_deg, (16,)).astype(jnp.float32)
         )
 
         # --- Next Piece ---
@@ -639,22 +633,11 @@ class JaxTetris(JaxEnvironment[TetrisState, TetrisObservation, TetrisInfo, Tetri
             visual_id=(bh - cell_rows.ravel()).astype(jnp.int32)
         )
 
-        # Playfield frame: the board_overlay sprite, drawn at BOARD_X/BOARD_Y every frame.
-        overlay = self.renderer.SHAPE_MASKS["board_overlay"]
-        frame = ObjectObservation.create(
-            x=jnp.array(c.BOARD_X, dtype=jnp.int32),
-            y=jnp.array(c.BOARD_Y, dtype=jnp.int32),
-            width=jnp.array(int(overlay.shape[1]), dtype=jnp.int32),
-            height=jnp.array(int(overlay.shape[0]), dtype=jnp.int32),
-            active=jnp.array(1, dtype=jnp.int32)
-        )
-
         return TetrisObservation(
             board=state.board,
             active_piece=active_piece,
             next_piece=next_piece,
             blocks=blocks,
-            frame=frame,
             score=state.score,
             game_over=state.game_over.astype(jnp.int32)
         )
