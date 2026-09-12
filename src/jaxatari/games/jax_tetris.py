@@ -144,7 +144,6 @@ class TetrisObservation:
     active_piece: ObjectObservation
     next_piece: ObjectObservation
     blocks: ObjectObservation
-    frame: ObjectObservation
     score: chex.Array
     game_over: chex.Array
 
@@ -378,7 +377,7 @@ class JaxTetris(JaxEnvironment[TetrisState, TetrisObservation, TetrisInfo, Tetri
         
         return spaces.Dict({
             "board": spaces.Box(low=0, high=1, shape=(h, w), dtype=jnp.int32),
-            "active_piece": single_obj,
+            "active_piece": spaces.get_object_space(n=16, screen_size=(210, 160)),
             "next_piece": single_obj, # Represents type via visual_id
             "blocks": spaces.get_object_space(n=h * w, screen_size=(210, 160)),
             "frame": single_obj,
