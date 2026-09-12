@@ -143,6 +143,8 @@ class TetrisObservation:
     board: chex.Array
     active_piece: ObjectObservation
     next_piece: ObjectObservation
+    blocks: ObjectObservation
+    frame: ObjectObservation
     score: chex.Array
     game_over: chex.Array
 
@@ -372,12 +374,14 @@ class JaxTetris(JaxEnvironment[TetrisState, TetrisObservation, TetrisInfo, Tetri
         w = int(c.BOARD_WIDTH)
         grid_size = (h, w)
         
-        single_obj = spaces.get_object_space(n=None, screen_size=grid_size)
+        single_obj = spaces.get_object_space(n=None, screen_size=(210, 160))
         
         return spaces.Dict({
             "board": spaces.Box(low=0, high=1, shape=(h, w), dtype=jnp.int32),
             "active_piece": single_obj,
             "next_piece": single_obj, # Represents type via visual_id
+            "blocks": spaces.get_object_space(n=h * w, screen_size=(210, 160)),
+            "frame": single_obj,
             "score": spaces.Box(low=0, high=999999, shape=(), dtype=jnp.int32),
             "game_over": spaces.Box(low=0, high=1, shape=(), dtype=jnp.int32),
         })
@@ -572,18 +576,36 @@ class JaxTetris(JaxEnvironment[TetrisState, TetrisObservation, TetrisInfo, Tetri
     @partial(jax.jit, static_argnums=(0,))
     def _get_observation(self, state: TetrisState) -> TetrisObservation:
         c = self.consts
-        w, h = int(c.BOARD_WIDTH), int(c.BOARD_HEIGHT)
+        # Cell pitch on screen. The 1 px gap mirrors the cell_padding=(1, 1) that
+        # TetrisRenderer.render passes to render_grid_inverse.
+        cw, ch, pad = int(c.CELL_WIDTH), int(c.CELL_HEIGHT), 1
         
         # --- Active Piece ---
         # Piece position is (row, col) = (y, x) in grid coords
         # Rotation 0..3 -> 0, 90, 180, 270
         rot_deg = (state.rot * 90.0).astype(jnp.float32)
         
+        # Tight bounding box of the occupied cells inside the 4x4 tetromino matrix.
+        # The raw 4x4 extent is not the object: an I piece is 4x1 cells, an O piece 2x2.
+        grid4 = self.piece_grid(state.piece_type, state.rot)
+        rows_occ = jnp.any(grid4 == 1, axis=1)
+        cols_occ = jnp.any(grid4 == 1, axis=0)
+        row_lo = jnp.argmax(rows_occ)
+        row_hi = 3 - jnp.argmax(rows_occ[::-1])
+        col_lo = jnp.argmax(cols_occ)
+        col_hi = 3 - jnp.argmax(cols_occ[::-1])
+
+        # Grid cell -> screen pixel, the same mapping render_grid_inverse uses.
+        # No clipping: the tight box is always inside the board, while state.pos itself
+        # may legally sit at -1 because empty matrix columns are allowed to stick out.
+        row0 = state.pos[0] + row_lo
+        col0 = state.pos[1] + col_lo
+
         active_piece = ObjectObservation.create(
-            x=jnp.clip(state.pos[1], 0, w), # pos[1] is x/col
-            y=jnp.clip(state.pos[0], 0, h), # pos[0] is y/row
-            width=jnp.array(4, dtype=jnp.int32), # All pieces are 4x4 grids
-            height=jnp.array(4, dtype=jnp.int32),
+            x=(c.BOARD_X + c.BOARD_PADDING + col0 * (cw + pad)).astype(jnp.int32),
+            y=(c.BOARD_Y + row0 * (ch + pad)).astype(jnp.int32),
+            width=((col_hi - col_lo) * (cw + pad) + cw).astype(jnp.int32),
+            height=((row_hi - row_lo) * (ch + pad) + ch).astype(jnp.int32),
             active=jnp.array(1, dtype=jnp.int32),
             visual_id=state.piece_type, # Type determines color/shape
             orientation=jnp.array(rot_deg, dtype=jnp.float32)
@@ -593,19 +615,47 @@ class JaxTetris(JaxEnvironment[TetrisState, TetrisObservation, TetrisInfo, Tetri
         # Not on board, so position 0,0 inactive or just metadata?
         # Standardize as an object with valid ID but perhaps off-board coordinates 
         # or just visually distinct. Let's keep it 'active' for metadata access.
+        # The renderer draws no next-piece preview, so there is no screen object here.
+        # Reported as inactive with a zero box; the type stays readable via visual_id.
         next_piece = ObjectObservation.create(
             x=jnp.array(0, dtype=jnp.int32),
             y=jnp.array(0, dtype=jnp.int32),
-            width=jnp.array(4, dtype=jnp.int32),
-            height=jnp.array(4, dtype=jnp.int32),
-            active=jnp.array(1, dtype=jnp.int32),
+            width=jnp.array(0, dtype=jnp.int32),
+            height=jnp.array(0, dtype=jnp.int32),
+            active=jnp.array(0, dtype=jnp.int32),
             visual_id=state.next_piece
+        )
+
+        # One box per board cell. The geometry is constant and folded away at trace
+        # time; only the occupancy flag changes per step.
+        bh, bw = int(c.BOARD_HEIGHT), int(c.BOARD_WIDTH)
+        cell_rows, cell_cols = jnp.meshgrid(jnp.arange(bh), jnp.arange(bw), indexing="ij")
+        blocks = ObjectObservation.create(
+            x=(c.BOARD_X + c.BOARD_PADDING + cell_cols.ravel() * (cw + pad)).astype(jnp.int32),
+            y=(c.BOARD_Y + cell_rows.ravel() * (ch + pad)).astype(jnp.int32),
+            width=jnp.full((bh * bw,), cw, dtype=jnp.int32),
+            height=jnp.full((bh * bw,), ch, dtype=jnp.int32),
+            active=(state.board.reshape(-1) != 0).astype(jnp.int32),
+            # The renderer colours a locked cell by its row index counted from the bottom.
+            visual_id=(bh - cell_rows.ravel()).astype(jnp.int32)
+        )
+
+        # Playfield frame: the board_overlay sprite, drawn at BOARD_X/BOARD_Y every frame.
+        overlay = self.renderer.SHAPE_MASKS["board_overlay"]
+        frame = ObjectObservation.create(
+            x=jnp.array(c.BOARD_X, dtype=jnp.int32),
+            y=jnp.array(c.BOARD_Y, dtype=jnp.int32),
+            width=jnp.array(int(overlay.shape[1]), dtype=jnp.int32),
+            height=jnp.array(int(overlay.shape[0]), dtype=jnp.int32),
+            active=jnp.array(1, dtype=jnp.int32)
         )
 
         return TetrisObservation(
             board=state.board,
             active_piece=active_piece,
             next_piece=next_piece,
+            blocks=blocks,
+            frame=frame,
             score=state.score,
             game_over=state.game_over.astype(jnp.int32)
         )
